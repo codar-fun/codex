@@ -5,6 +5,36 @@ use pretty_assertions::assert_eq;
 use std::num::NonZeroU64;
 use tempfile::tempdir;
 
+struct EnvVarGuard {
+    key: &'static str,
+    previous: Option<String>,
+}
+
+impl EnvVarGuard {
+    fn set(key: &'static str, value: &str) -> Self {
+        let previous = std::env::var(key).ok();
+        // SAFETY: These tests only use this process-level environment variable
+        // long enough to build a provider header map, then restore it.
+        unsafe {
+            std::env::set_var(key, value);
+        }
+        Self { key, previous }
+    }
+}
+
+impl Drop for EnvVarGuard {
+    fn drop(&mut self) {
+        // SAFETY: Restores the process-level environment variable changed by
+        // this guard during the test.
+        unsafe {
+            match &self.previous {
+                Some(value) => std::env::set_var(self.key, value),
+                None => std::env::remove_var(self.key),
+            }
+        }
+    }
+}
+
 #[test]
 fn test_deserialize_ollama_model_provider_toml() {
     let azure_provider_toml = r#"
@@ -287,6 +317,59 @@ fn test_amazon_bedrock_provider_adds_mantle_client_agent_header() {
 }
 
 #[test]
+fn test_create_deepseek_provider() {
+    assert_eq!(
+        ModelProviderInfo::create_deepseek_provider(),
+        ModelProviderInfo {
+            name: "DeepSeek".to_string(),
+            base_url: Some(DEEPSEEK_ANTHROPIC_BASE_URL.to_string()),
+            env_key: None,
+            env_key_instructions: None,
+            experimental_bearer_token: None,
+            auth: None,
+            aws: None,
+            wire_api: WireApi::Anthropic,
+            query_params: None,
+            http_headers: Some(maplit::hashmap! {
+                "anthropic-version".to_string() => "2023-06-01".to_string(),
+            }),
+            env_http_headers: Some(maplit::hashmap! {
+                "x-api-key".to_string() => "DEEPSEEK_API_KEY".to_string(),
+            }),
+            request_max_retries: None,
+            stream_max_retries: None,
+            stream_idle_timeout_ms: None,
+            websocket_connect_timeout_ms: None,
+            requires_openai_auth: false,
+            supports_websockets: false,
+        }
+    );
+}
+
+#[test]
+fn test_deepseek_provider_reads_deepseek_api_key_header() {
+    let _guard = EnvVarGuard::set("DEEPSEEK_API_KEY", "deepseek-test-key");
+    let api_provider = ModelProviderInfo::create_deepseek_provider()
+        .to_api_provider(/*auth_mode*/ None)
+        .expect("DeepSeek provider should build API provider");
+
+    assert_eq!(
+        api_provider
+            .headers
+            .get("x-api-key")
+            .and_then(|value| value.to_str().ok()),
+        Some("deepseek-test-key")
+    );
+    assert_eq!(
+        api_provider
+            .headers
+            .get("anthropic-version")
+            .and_then(|value| value.to_str().ok()),
+        Some("2023-06-01")
+    );
+}
+
+#[test]
 fn test_built_in_model_providers_include_amazon_bedrock() {
     let providers = built_in_model_providers(/*openai_base_url*/ None);
 
@@ -295,6 +378,18 @@ fn test_built_in_model_providers_include_amazon_bedrock() {
             .get(AMAZON_BEDROCK_PROVIDER_ID)
             .map(ModelProviderInfo::is_amazon_bedrock),
         Some(true)
+    );
+}
+
+#[test]
+fn test_built_in_model_providers_include_deepseek() {
+    let providers = built_in_model_providers(/*openai_base_url*/ None);
+
+    assert_eq!(
+        providers
+            .get(DEEPSEEK_PROVIDER_ID)
+            .map(|provider| (provider.name.as_str(), provider.wire_api)),
+        Some(("DeepSeek", WireApi::Anthropic))
     );
 }
 

@@ -4,6 +4,7 @@ use std::time::Duration;
 use anyhow::Result;
 use async_trait::async_trait;
 use bytes::Bytes;
+use codex_api::AnthropicMessagesClient;
 use codex_api::AuthProvider;
 use codex_api::Compression;
 use codex_api::Provider;
@@ -166,6 +167,104 @@ async fn responses_stream_parses_items_and_completed_end_to_end() -> Result<()> 
         }
         other => panic!("unexpected third event: {other:?}"),
     }
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn anthropic_stream_parses_text_tool_call_and_completion() -> Result<()> {
+    let body = [
+        r#"event: message_start
+data: {"type":"message_start","message":{"id":"msg_1","usage":{"input_tokens":3,"output_tokens":1}}}
+
+"#,
+        r#"event: content_block_start
+data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}
+
+"#,
+        r#"event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello"}}
+
+"#,
+        r#"event: content_block_stop
+data: {"type":"content_block_stop","index":0}
+
+"#,
+        r#"event: content_block_start
+data: {"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"toolu_1","name":"lookup","input":{}}}
+
+"#,
+        r#"event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"{\"q\":\"x\"}"}}
+
+"#,
+        r#"event: content_block_stop
+data: {"type":"content_block_stop","index":1}
+
+"#,
+        r#"event: message_delta
+data: {"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"output_tokens":7}}
+
+"#,
+        r#"event: message_stop
+data: {"type":"message_stop"}
+
+"#,
+    ]
+    .join("");
+
+    let transport = FixtureSseTransport::new(body);
+    let client = AnthropicMessagesClient::new(transport, provider("deepseek"), Arc::new(NoAuth));
+    let request = codex_api::ResponsesApiRequest {
+        model: "deepseek-reasoner".into(),
+        instructions: String::new(),
+        input: vec![ResponseItem::Message {
+            id: None,
+            role: "user".into(),
+            content: vec![codex_protocol::models::ContentItem::InputText { text: "hi".into() }],
+            phase: None,
+        }],
+        tools: Vec::new(),
+        tool_choice: "auto".into(),
+        parallel_tool_calls: false,
+        reasoning: None,
+        store: false,
+        stream: true,
+        include: Vec::new(),
+        service_tier: None,
+        prompt_cache_key: None,
+        text: None,
+        client_metadata: None,
+    };
+
+    let mut stream = client
+        .stream_request(request, HeaderMap::new(), codex_api::Compression::None)
+        .await?;
+
+    let mut events = Vec::new();
+    while let Some(ev) = stream.next().await {
+        events.push(ev?);
+    }
+
+    assert!(matches!(events[0], ResponseEvent::Created));
+    assert!(matches!(
+        &events[1],
+        ResponseEvent::OutputTextDelta(delta) if delta == "Hello"
+    ));
+    assert!(matches!(
+        &events[2],
+        ResponseEvent::OutputItemDone(ResponseItem::Message { role, .. }) if role == "assistant"
+    ));
+    assert!(matches!(
+        &events[3],
+        ResponseEvent::OutputItemDone(ResponseItem::FunctionCall { name, arguments, call_id, .. })
+            if name == "lookup" && arguments == "{\"q\":\"x\"}" && call_id == "toolu_1"
+    ));
+    assert!(matches!(
+        &events[4],
+        ResponseEvent::Completed { response_id, token_usage: Some(usage), end_turn: Some(true) }
+            if response_id == "msg_1" && usage.input_tokens == 3 && usage.output_tokens == 7
+    ));
 
     Ok(())
 }

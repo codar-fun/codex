@@ -5,11 +5,13 @@ use std::time::Duration;
 use anyhow::Result;
 use async_trait::async_trait;
 use bytes::Bytes;
+use codex_api::AnthropicMessagesClient;
 use codex_api::ApiError;
 use codex_api::AuthError;
 use codex_api::AuthProvider;
 use codex_api::Compression;
 use codex_api::Provider;
+use codex_api::Reasoning;
 use codex_api::ResponsesApiRequest;
 use codex_api::ResponsesClient;
 use codex_api::ResponsesOptions;
@@ -21,12 +23,14 @@ use codex_client::StreamResponse;
 use codex_client::TransportError;
 use codex_protocol::models::ContentItem;
 use codex_protocol::models::ResponseItem;
+use codex_protocol::openai_models::ReasoningEffort;
 use codex_protocol::protocol::SessionSource;
 use codex_protocol::protocol::SubAgentSource;
 use http::HeaderMap;
 use http::HeaderValue;
 use http::StatusCode;
 use pretty_assertions::assert_eq;
+use serde_json::Value;
 
 fn assert_path_ends_with(requests: &[Request], suffix: &str) {
     assert_eq!(requests.len(), 1);
@@ -35,6 +39,13 @@ fn assert_path_ends_with(requests: &[Request], suffix: &str) {
         url.ends_with(suffix),
         "expected url to end with {suffix}, got {url}"
     );
+}
+
+fn request_json_body(request: &Request) -> Value {
+    let Some(RequestBody::Json(body)) = request.body.as_ref() else {
+        panic!("expected JSON request body");
+    };
+    body.clone()
 }
 
 #[derive(Debug, Default, Clone)]
@@ -269,6 +280,102 @@ async fn responses_client_uses_responses_path() -> Result<()> {
 
     let requests = state.take_stream_requests();
     assert_path_ends_with(&requests, "/responses");
+    Ok(())
+}
+
+#[tokio::test]
+async fn anthropic_messages_client_uses_messages_path_and_body_shape() -> Result<()> {
+    let state = RecordingState::default();
+    let transport = RecordingTransport::new(state.clone());
+    let client = AnthropicMessagesClient::new(transport, provider("deepseek"), Arc::new(NoAuth));
+
+    let request = ResponsesApiRequest {
+        model: "deepseek-reasoner".into(),
+        instructions: "System prompt".into(),
+        input: vec![ResponseItem::Message {
+            id: None,
+            role: "user".into(),
+            content: vec![ContentItem::InputText { text: "hi".into() }],
+            phase: None,
+        }],
+        tools: vec![serde_json::json!({
+            "type": "function",
+            "name": "lookup",
+            "description": "Lookup a value",
+            "parameters": {"type": "object", "properties": {"q": {"type": "string"}}}
+        })],
+        tool_choice: "auto".into(),
+        parallel_tool_calls: false,
+        reasoning: None,
+        store: false,
+        stream: true,
+        include: Vec::new(),
+        service_tier: None,
+        prompt_cache_key: None,
+        text: None,
+        client_metadata: None,
+    };
+
+    let _stream = client
+        .stream_request(request, HeaderMap::new(), Compression::None)
+        .await?;
+
+    let requests = state.take_stream_requests();
+    assert_path_ends_with(&requests, "/messages");
+    let body = request_json_body(&requests[0]);
+    assert_eq!(body["model"], "deepseek-reasoner");
+    assert_eq!(body["system"], "System prompt");
+    assert_eq!(body["stream"], true);
+    assert_eq!(body["messages"][0]["role"], "user");
+    assert_eq!(body["messages"][0]["content"][0]["type"], "text");
+    assert_eq!(body["messages"][0]["content"][0]["text"], "hi");
+    assert_eq!(body["tools"][0]["name"], "lookup");
+    assert_eq!(body["tools"][0]["input_schema"]["type"], "object");
+    assert_eq!(body["tool_choice"]["type"], "auto");
+    Ok(())
+}
+
+#[tokio::test]
+async fn anthropic_messages_client_omits_tool_fields_without_tools() -> Result<()> {
+    let state = RecordingState::default();
+    let transport = RecordingTransport::new(state.clone());
+    let client = AnthropicMessagesClient::new(transport, provider("deepseek"), Arc::new(NoAuth));
+
+    let request = ResponsesApiRequest {
+        model: "deepseek-reasoner".into(),
+        instructions: String::new(),
+        input: vec![ResponseItem::Message {
+            id: None,
+            role: "user".into(),
+            content: vec![ContentItem::InputText { text: "hi".into() }],
+            phase: None,
+        }],
+        tools: Vec::new(),
+        tool_choice: "auto".into(),
+        parallel_tool_calls: false,
+        reasoning: Some(Reasoning {
+            effort: Some(ReasoningEffort::Low),
+            summary: None,
+        }),
+        store: false,
+        stream: true,
+        include: Vec::new(),
+        service_tier: None,
+        prompt_cache_key: None,
+        text: None,
+        client_metadata: None,
+    };
+
+    let _stream = client
+        .stream_request(request, HeaderMap::new(), Compression::None)
+        .await?;
+
+    let requests = state.take_stream_requests();
+    let body = request_json_body(&requests[0]);
+    assert!(body.get("system").is_none());
+    assert!(body.get("tools").is_none());
+    assert!(body.get("tool_choice").is_none());
+    assert_eq!(body["output_config"]["effort"], serde_json::json!("low"));
     Ok(())
 }
 
