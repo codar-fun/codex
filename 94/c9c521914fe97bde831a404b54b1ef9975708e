@@ -1,0 +1,49 @@
+codex-rs/codex-api/src/sse/mod.rs
+  s_e496c23a9ece9b::t_45c8ab38673286 1
+codex-rs/codex-api/src/lib.rs
+  s_e496c23a9ece9b::t_12e85fb58395bb 44
+codex-rs/core/src/client.rs
+  s_e496c23a9ece9b::t_2ebf3616c8b1d5 34,1706-1707
+  s_e496c23a9ece9b::t_8b477b9df0d180 1323-1391,1393-1407
+codex-rs/codex-api/src/endpoint/mod.rs
+  s_e496c23a9ece9b::t_ad11ba01839c0b 1
+codex-rs/codex-api/src/sse/anthropic.rs
+  s_e496c23a9ece9b::t_3890433dc7be49 205-207
+  s_e496c23a9ece9b::t_873d6b37c0bf81 1-90,92-95,97-102,112-204,208-219,224-232,237-256,259-323
+  s_e496c23a9ece9b::t_8d97870c88e8fe 103-111,220-223,233-236,257-258
+codex-rs/model-provider/src/provider.rs
+  s_e496c23a9ece9b::t_d89b8f0c183f44 10,183-191
+  s_e496c23a9ece9b::t_74cd20669a98d8 377-392
+codex-rs/model-provider-info/src/lib.rs
+  s_e496c23a9ece9b::t_44606f3d79c125 38-40,59-60,67,81,83-86,395-422,453,462
+codex-rs/codex-api/src/endpoint/anthropic.rs
+  s_e496c23a9ece9b::t_83b52fb18b4a43 1-12,14-93,95-96,98,101-102,105-142,157-195,198-226,229-232,235-236,238-239,253-294
+  s_e496c23a9ece9b::t_09de1ba62b797f 13,94,97,99-100,103-104,143-144,146-148,155-156,196-197,227-228,233-234,237,240-241,243,245,250-251
+  s_e496c23a9ece9b::t_9996730d231a34 145,149-154,242,244,246-249,252
+codex-rs/codex-api/tests/clients.rs
+  s_e496c23a9ece9b::t_dc838efcf653dd 33
+  s_e496c23a9ece9b::t_b0aec6fd70d07e 378
+  s_e496c23a9ece9b::t_ab0c8b298fd29f 8,44-50,286-333
+  s_e496c23a9ece9b::t_e6fbe4f997cf3f 14,26,334-377
+codex-rs/model-provider-info/src/model_provider_info_tests.rs
+  s_e496c23a9ece9b::t_a1fcc6466bcdde 320-350,370-371,384-392
+  s_e496c23a9ece9b::t_0f3c888a3a79f3 8-37,351-369
+codex-rs/codex-api/tests/sse_end_to_end.rs
+  s_e496c23a9ece9b::t_4345b6e7270c85 7,173-223,225-267
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.11",
+  "base_commit_sha": "94c9c521914fe97bde831a404b54b1ef9975708e",
+  "prompts": {},
+  "sessions": {
+    "s_e496c23a9ece9b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e6a86-8451-7241-832d-53658b3450d6",
+        "model": "gpt-5.5"
+      },
+      "human_author": "jiangplus <jiang.plus.times@gmail.com>"
+    }
+  }
+}
